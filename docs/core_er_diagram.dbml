@@ -1,0 +1,131 @@
+Project marketplace_core {
+  database_type: 'PostgreSQL'
+  Note: 'Core-модель маркетплейса Olist. Одна строка в order_item — позиция товара в заказе; платежи и отзывы хранятся отдельными фактами.'
+}
+
+Table core.buyer {
+  buyer_id text [pk, note: 'Стабильный ID покупателя']
+}
+
+Table core.customer_record {
+  customer_id text [pk, note: 'Запись покупателя в источнике']
+  buyer_id text [not null]
+  postal_prefix text
+  city text
+  state_code text
+}
+
+Table core.customer_address_version {
+  address_version_id bigint [pk, increment]
+  customer_id text [not null]
+  postal_prefix text
+  city text
+  state_code text
+  valid_from timestamp [not null]
+  valid_to timestamp [not null]
+  indexes {
+    (customer_id, valid_from) [unique]
+  }
+  Note: 'Интервал действия адреса [valid_from, valid_to)'
+}
+
+Table core.orders {
+  order_id text [pk]
+  customer_id text [not null]
+  address_version_id bigint [not null]
+  order_status text [not null]
+  purchased_at timestamp
+  approved_at timestamp
+  handed_to_carrier_at timestamp
+  delivered_at timestamp
+  estimated_delivery_at timestamp
+}
+
+Table core.order_item {
+  order_id text [not null]
+  order_item_id integer [not null]
+  product_id text [not null]
+  category_id text [not null, note: 'Категория на момент оформления заказа']
+  seller_id text [not null]
+  shipping_limit_at timestamp
+  item_price numeric(12,2) [not null]
+  freight_value numeric(12,2) [not null]
+
+  indexes {
+    (order_id, order_item_id) [pk]
+  }
+}
+
+Table core.order_payment {
+  order_id text [not null]
+  payment_sequential integer [not null]
+  payment_type text
+  installments integer
+  payment_value numeric(12,2) [not null]
+
+  indexes {
+    (order_id, payment_sequential) [pk]
+  }
+}
+
+Table core.order_review {
+  review_row_id bigint [pk, note: 'Технический identity key']
+  source_review_id text [not null]
+  order_id text [not null]
+  review_score smallint
+  comment_title text
+  comment_message text
+  created_at timestamp
+  answered_at timestamp
+}
+
+Table core.product {
+  product_id text [pk]
+  category_id text [not null]
+  name_length integer
+  description_length integer
+  photos_qty integer
+  weight_g integer
+  length_cm numeric(10,2)
+  height_cm numeric(10,2)
+  width_cm numeric(10,2)
+}
+
+Table core.product_category {
+  category_id text [pk]
+  category_label text [not null]
+  category_label_english text
+}
+
+Table core.product_category_version {
+  product_id text [not null]
+  category_id text [not null]
+  valid_from timestamp [not null]
+  valid_to timestamp [not null]
+
+  indexes {
+    (product_id, valid_from) [pk]
+  }
+  Note: 'Интервал действия категории [valid_from, valid_to)'
+}
+
+Table core.seller {
+  seller_id text [pk]
+  postal_prefix text
+  city text
+  state_code text
+}
+
+Ref: core.customer_record.buyer_id > core.buyer.buyer_id
+Ref: core.customer_address_version.customer_id > core.customer_record.customer_id
+Ref: core.orders.customer_id > core.customer_record.customer_id
+Ref: core.orders.address_version_id > core.customer_address_version.address_version_id
+Ref: core.order_item.order_id > core.orders.order_id
+Ref: core.order_item.product_id > core.product.product_id
+Ref: core.order_item.category_id > core.product_category.category_id
+Ref: core.order_item.seller_id > core.seller.seller_id
+Ref: core.order_payment.order_id > core.orders.order_id
+Ref: core.order_review.order_id > core.orders.order_id
+Ref: core.product.category_id > core.product_category.category_id
+Ref: core.product_category_version.product_id > core.product.product_id
+Ref: core.product_category_version.category_id > core.product_category.category_id

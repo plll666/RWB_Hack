@@ -41,6 +41,55 @@ BEGIN
     END IF;
     RAISE NOTICE 'PASS: expected core row counts';
 
+    IF to_regclass('core.product_category_version') IS NULL
+       OR to_regclass('core.customer_address_version') IS NULL
+       OR NOT EXISTS (SELECT 1 FROM information_schema.columns
+                      WHERE table_schema = 'core' AND table_name = 'order_item' AND column_name = 'category_id')
+       OR NOT EXISTS (SELECT 1 FROM information_schema.columns
+                      WHERE table_schema = 'core' AND table_name = 'orders' AND column_name = 'address_version_id') THEN
+        RAISE EXCEPTION 'FAIL: historical tables or order snapshot keys are missing';
+    END IF;
+    IF EXISTS (SELECT 1 FROM core.product p WHERE NOT EXISTS (
+                   SELECT 1 FROM core.product_category_version v
+                   WHERE v.product_id = p.product_id AND v.valid_from = '-infinity'))
+       OR EXISTS (SELECT 1 FROM core.customer_record r WHERE NOT EXISTS (
+                   SELECT 1 FROM core.customer_address_version v
+                   WHERE v.customer_id = r.customer_id AND v.valid_from = '-infinity')) THEN
+        RAISE EXCEPTION 'FAIL: initial historical versions do not cover every product/customer record';
+    END IF;
+    IF EXISTS (SELECT 1 FROM core.product_category_version WHERE valid_from >= valid_to)
+       OR EXISTS (SELECT 1 FROM core.customer_address_version WHERE valid_from >= valid_to)
+       OR EXISTS (
+           SELECT 1 FROM core.product_category_version a
+           JOIN core.product_category_version b USING (product_id)
+           WHERE (a.product_id, a.valid_from) < (b.product_id, b.valid_from)
+             AND a.valid_from < b.valid_to AND b.valid_from < a.valid_to
+       )
+       OR EXISTS (
+           SELECT 1 FROM core.customer_address_version a
+           JOIN core.customer_address_version b USING (customer_id)
+           WHERE a.address_version_id < b.address_version_id
+             AND a.valid_from < b.valid_to AND b.valid_from < a.valid_to
+       ) THEN
+        RAISE EXCEPTION 'FAIL: invalid or overlapping historical intervals';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM core.orders o
+        LEFT JOIN core.customer_address_version av USING (address_version_id)
+        WHERE av.address_version_id IS NULL OR av.customer_id <> o.customer_id
+           OR (o.purchased_at IS NOT NULL AND NOT (o.purchased_at >= av.valid_from AND o.purchased_at < av.valid_to))
+    ) OR EXISTS (
+        SELECT 1 FROM core.order_item i
+        JOIN core.orders o USING (order_id)
+        LEFT JOIN core.product_category_version cv
+          ON cv.product_id = i.product_id AND cv.category_id = i.category_id
+        WHERE cv.product_id IS NULL
+           OR (o.purchased_at IS NOT NULL AND NOT (o.purchased_at >= cv.valid_from AND o.purchased_at < cv.valid_to))
+    ) THEN
+        RAISE EXCEPTION 'FAIL: order history snapshot does not match purchase-time version';
+    END IF;
+    RAISE NOTICE 'PASS: historical versions, non-overlap, keys and purchase-time snapshots';
+
     IF EXISTS (SELECT 1 FROM raw.orders GROUP BY order_id HAVING count(*) > 1)
        OR EXISTS (SELECT 1 FROM raw.order_items GROUP BY order_id, order_item_id HAVING count(*) > 1)
        OR EXISTS (SELECT 1 FROM raw.order_payments GROUP BY order_id, payment_sequential HAVING count(*) > 1)
@@ -67,9 +116,13 @@ BEGIN
     IF EXISTS (SELECT 1 FROM core.customer_record r LEFT JOIN core.buyer b ON b.buyer_id = r.buyer_id WHERE b.buyer_id IS NULL)
        OR EXISTS (SELECT 1 FROM core.orders o LEFT JOIN core.customer_record c USING (customer_id) WHERE c.customer_id IS NULL)
        OR EXISTS (SELECT 1 FROM core.product p LEFT JOIN core.product_category c USING (category_id) WHERE c.category_id IS NULL)
+       OR EXISTS (SELECT 1 FROM core.customer_record r LEFT JOIN core.customer_address_version av USING (customer_id) WHERE av.customer_id IS NULL)
+       OR EXISTS (SELECT 1 FROM core.product p LEFT JOIN core.product_category_version cv USING (product_id) WHERE cv.product_id IS NULL)
        OR EXISTS (SELECT 1 FROM core.order_item i LEFT JOIN core.orders o USING (order_id) WHERE o.order_id IS NULL)
        OR EXISTS (SELECT 1 FROM core.order_item i LEFT JOIN core.product p USING (product_id) WHERE p.product_id IS NULL)
+       OR EXISTS (SELECT 1 FROM core.order_item i LEFT JOIN core.product_category c USING (category_id) WHERE c.category_id IS NULL)
        OR EXISTS (SELECT 1 FROM core.order_item i LEFT JOIN core.seller s USING (seller_id) WHERE s.seller_id IS NULL)
+       OR EXISTS (SELECT 1 FROM core.orders o LEFT JOIN core.customer_address_version av USING (address_version_id) WHERE av.address_version_id IS NULL)
        OR EXISTS (SELECT 1 FROM core.order_payment p LEFT JOIN core.orders o USING (order_id) WHERE o.order_id IS NULL)
        OR EXISTS (SELECT 1 FROM core.order_review r LEFT JOIN core.orders o USING (order_id) WHERE o.order_id IS NULL) THEN
         RAISE EXCEPTION 'FAIL: orphan relationships found';

@@ -1,0 +1,289 @@
+// ============================================================
+//  ER-диаграмма БД «Модель маркетплейса» (Olist, PostgreSQL)
+//
+//  raw  — зеркало исходных CSV: все поля text, FK нет (осознанно),
+//         чтобы загрузка не падала на «мусорных» строках.
+//  core — типизированная аналитическая модель (model/build.sql).
+//
+//  Все связи (линии) описаны в слое core.
+//  Просмотр: dbdiagram.io → Import → этот файл,
+//  или VS Code с расширением «dbdiagram.io».
+// ============================================================
+
+Project marketplace_olist {
+  database_type: 'PostgreSQL'
+  Note: '''Двухслойная модель маркетплейса Olist: raw-слой хранит данные CSV «как есть», core-слой — очищенные таблицы с типами и физическими FK. Виды диаграммы: core_model (аналитические таблицы и связи) и raw_import (зеркало CSV).'''
+}
+
+// ------------------------- CORE -------------------------
+
+Enum order_status [note: 'в БД это text; enum — для читаемости диаграммы'] {
+  created
+  approved
+  invoiced
+  processing
+  shipped
+  in_carrier
+  delivered
+  unavailable
+  canceled
+}
+
+Enum payment_type [note: 'в БД это text; enum — для читаемости диаграммы'] {
+  credit_card
+  boleto
+  voucher
+  debit_card
+  not_defined
+}
+
+Table core.buyer [headercolor: '#059669'] {
+  buyer_id text [pk, note: 'стабильная личность покупателя = raw.customers.customer_unique_id']
+}
+
+Table core.customer_record [headercolor: '#10B981'] {
+  customer_id   text [pk, note: 'покупатель в рамках одного заказа (строка raw.customers)']
+  buyer_id      text [not null]
+  postal_prefix text
+  city          text
+  state_code    text
+}
+
+Table core.seller [headercolor: '#14B8A6'] {
+  seller_id     text [pk]
+  postal_prefix text
+  city          text
+  state_code    text
+}
+
+Table core.product_category [headercolor: '#D97706', note: 'справочник категорий; пропущенные коды сворачиваются в '__UNCLASSIFIED__''] {
+  category_id            text [pk, note: 'код категории на португальском либо '__UNCLASSIFIED__'']
+  category_label         text [not null]
+  category_label_english text [note: 'английское название (fallback — сам код)']
+}
+
+Table core.product [headercolor: '#0D9488'] {
+  product_id         text [pk]
+  category_id        text [not null]
+  name_length        integer [note: 'в исходнике опечатка: product_name_lenght']
+  description_length integer
+  photos_qty         integer
+  weight_g           integer
+  length_cm          numeric(10,2)
+  height_cm          numeric(10,2)
+  width_cm           numeric(10,2)
+}
+
+Table core.orders [headercolor: '#2563EB', note: 'одна строка — один заказ'] {
+  order_id              text [pk]
+  customer_id           text [not null]
+  order_status          order_status [not null]
+  purchased_at          timestamp [note: 'момент оформления']
+  approved_at           timestamp [note: 'момент подтверждения оплаты']
+  handed_to_carrier_at  timestamp [note: 'передан в доставку']
+  delivered_at          timestamp [note: 'вручён покупателю']
+  estimated_delivery_at timestamp [note: 'обещанная дата доставки']
+  indexes {
+    purchased_at [name: 'orders_purchased_at_idx']
+    customer_id  [name: 'orders_customer_id_idx']
+  }
+}
+
+Table core.order_item [headercolor: '3B82F6', note: 'одна строка — один товар одного продавца в заказе'] {
+  order_id          text [not null]
+  order_item_id     integer [note: 'номер позиции ВНУТРИ заказа, не глобальный ID']
+  product_id        text [not null]
+  seller_id         text [not null]
+  shipping_limit_at timestamp [note: 'крайний срок отгрузки продавцом']
+  item_price        numeric(12,2) [not null]
+  freight_value     numeric(12,2) [not null]
+  indexes {
+    (order_id, order_item_id) [pk]
+    product_id [name: 'order_item_product_id_idx']
+    seller_id  [name: 'order_item_seller_id_idx']
+  }
+}
+
+Table core.order_payment [headercolor: '#0EA5E9', note: 'заказ может быть оплачен несколькими платежами'] {
+  order_id           text [not null]
+  payment_sequential integer [note: 'номер платежа внутри заказа']
+  payment_type       payment_type
+  installments       integer [note: 'число частей рассрочки']
+  payment_value      numeric(12,2) [not null]
+  indexes {
+    (order_id, payment_sequential) [pk]
+  }
+}
+
+Table core.order_review [headercolor: '#6366F1', note: 'review_id в источнике не уникален — строки не дедуплицируются'] {
+  review_row_id    bigint [pk, note: 'GENERATED ALWAYS AS IDENTITY — технический ключ']
+  source_review_id text [not null]
+  order_id         text [not null]
+  review_score     smallint [note: 'оценка от 1 до 5']
+  comment_title    text
+  comment_message  text
+  created_at       timestamp
+  answered_at      timestamp
+  indexes {
+    order_id [name: 'order_review_order_id_idx']
+  }
+}
+
+// ------------------------- RAW -------------------------
+
+// Все колонки — text: в raw данные кладутся «как пришли».
+// Служебные колонки _source_file и _loaded_at заполняются автоматически.
+
+Table raw.orders [headercolor: '#7C8B9D', note: 'зеркало olist_orders_dataset.csv'] {
+  order_id                      text
+  customer_id                   text
+  order_status                  text
+  order_purchase_timestamp      text
+  order_approved_at             text
+  order_delivered_carrier_date  text
+  order_delivered_customer_date text
+  order_estimated_delivery_date text
+  _source_file                  text
+  _loaded_at                    timestamptz [note: 'DEFAULT now()']
+}
+
+Table raw.order_items [headercolor: '#7C8B9D', note: 'зеркало olist_order_items_dataset.csv'] {
+  order_id            text
+  order_item_id       text
+  product_id          text
+  seller_id           text
+  shipping_limit_date text
+  price               text
+  freight_value       text
+  _source_file        text
+  _loaded_at          timestamptz [note: 'DEFAULT now()']
+}
+
+Table raw.order_payments [headercolor: '#7C8B9D', note: 'зеркало olist_order_payments_dataset.csv'] {
+  order_id             text
+  payment_sequential   text
+  payment_type         text
+  payment_installments text
+  payment_value        text
+  _source_file         text
+  _loaded_at           timestamptz [note: 'DEFAULT now()']
+}
+
+Table raw.order_reviews [headercolor: '#7C8B9D', note: 'зеркало olist_order_reviews_dataset.csv'] {
+  review_id               text
+  order_id                text
+  review_score            text
+  review_comment_title    text
+  review_comment_message  text
+  review_creation_date    text
+  review_answer_timestamp text
+  _source_file            text
+  _loaded_at              timestamptz [note: 'DEFAULT now()']
+}
+
+Table raw.products [headercolor: '#7C8B9D', note: 'зеркало olist_products_dataset.csv'] {
+  product_id                 text
+  product_category_name      text [note: 'категория на португальском']
+  product_name_lenght        text
+  product_description_lenght text
+  product_photos_qty         text
+  product_weight_g           text
+  product_length_cm          text
+  product_height_cm          text
+  product_width_cm           text
+  _source_file               text
+  _loaded_at                 timestamptz [note: 'DEFAULT now()']
+}
+
+Table raw.sellers [headercolor: '#7C8B9D', note: 'зеркало olist_sellers_dataset.csv'] {
+  seller_id              text
+  seller_zip_code_prefix text
+  seller_city            text
+  seller_state           text
+  _source_file           text
+  _loaded_at             timestamptz [note: 'DEFAULT now()']
+}
+
+Table raw.customers [headercolor: '#7C8B9D', note: 'зеркало olist_customers_dataset.csv'] {
+  customer_id              text
+  customer_unique_id       text
+  customer_zip_code_prefix text
+  customer_city            text
+  customer_state           text
+  _source_file             text
+  _loaded_at               timestamptz [note: 'DEFAULT now()']
+}
+
+Table raw.product_category_translation [headercolor: '#7C8B9D', note: 'справочник: португальский → английский'] {
+  product_category_name         text
+  product_category_name_english text
+  _source_file                  text
+  _loaded_at                    timestamptz [note: 'DEFAULT now()']
+}
+
+// ------------------------- СВЯЗИ -------------------------
+
+// Все линии — физические FK из stack model/build.sql (схема core).
+
+Ref: core.customer_record.buyer_id > core.buyer.buyer_id
+Ref: core.product.category_id      > core.product_category.category_id
+Ref: core.orders.customer_id       > core.customer_record.customer_id
+Ref: core.order_item.order_id      > core.orders.order_id
+Ref: core.order_item.product_id    > core.product.product_id
+Ref: core.order_item.seller_id     > core.seller.seller_id
+Ref: core.order_payment.order_id   > core.orders.order_id
+Ref: core.order_review.order_id    > core.orders.order_id
+
+// ------------------------- ГРУППЫ -------------------------
+
+TableGroup core_layer {
+  core.buyer
+  core.customer_record
+  core.seller
+  core.product_category
+  core.product
+  core.orders
+  core.order_item
+  core.order_payment
+  core.order_review
+}
+
+TableGroup raw_layer {
+  raw.orders
+  raw.order_items
+  raw.order_payments
+  raw.order_reviews
+  raw.products
+  raw.sellers
+  raw.customers
+  raw.product_category_translation
+}
+
+// ------------------------- ВИДЫ -------------------------
+
+DiagramView core_model {
+  tables: [
+    core.buyer,
+    core.customer_record,
+    core.seller,
+    core.product_category,
+    core.product,
+    core.orders,
+    core.order_item,
+    core.order_payment,
+    core.order_review
+  ]
+}
+
+DiagramView raw_import {
+  tables: [
+    raw.orders,
+    raw.order_items,
+    raw.order_payments,
+    raw.order_reviews,
+    raw.products,
+    raw.sellers,
+    raw.customers,
+    raw.product_category_translation
+  ]
+}

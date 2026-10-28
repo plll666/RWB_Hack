@@ -7,6 +7,8 @@ DROP TABLE IF EXISTS core.order_review CASCADE;
 DROP TABLE IF EXISTS core.order_payment CASCADE;
 DROP TABLE IF EXISTS core.order_item CASCADE;
 DROP TABLE IF EXISTS core.orders CASCADE;
+DROP TABLE IF EXISTS core.customer_address_version CASCADE;
+DROP TABLE IF EXISTS core.product_category_version CASCADE;
 DROP TABLE IF EXISTS core.product CASCADE;
 DROP TABLE IF EXISTS core.seller CASCADE;
 DROP TABLE IF EXISTS core.customer_record CASCADE;
@@ -35,6 +37,24 @@ INSERT INTO core.customer_record
 SELECT customer_id, customer_unique_id,
        customer_zip_code_prefix, customer_city, customer_state
 FROM raw.customers;
+
+-- The source has one address snapshot per customer record and no move dates.
+-- Keep that fact as an open-ended initial version; never invent earlier moves.
+CREATE TABLE core.customer_address_version (
+    address_version_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    customer_id text NOT NULL REFERENCES core.customer_record(customer_id),
+    postal_prefix text,
+    city text,
+    state_code text,
+    valid_from timestamp NOT NULL,
+    valid_to timestamp NOT NULL,
+    UNIQUE (customer_id, valid_from),
+    CHECK (valid_from < valid_to)
+);
+INSERT INTO core.customer_address_version
+    (customer_id, postal_prefix, city, state_code, valid_from, valid_to)
+SELECT customer_id, postal_prefix, city, state_code, '-infinity', 'infinity'
+FROM core.customer_record;
 
 CREATE TABLE core.seller (
     seller_id text PRIMARY KEY,
@@ -90,9 +110,25 @@ SELECT p.product_id,
        NULLIF(p.product_width_cm, '')::numeric(10,2)
 FROM raw.products p;
 
+-- The source has no category change history. The initial category version
+-- therefore covers the whole available period, without fabricated changes.
+CREATE TABLE core.product_category_version (
+    product_id text NOT NULL REFERENCES core.product(product_id),
+    category_id text NOT NULL REFERENCES core.product_category(category_id),
+    valid_from timestamp NOT NULL,
+    valid_to timestamp NOT NULL,
+    PRIMARY KEY (product_id, valid_from),
+    CHECK (valid_from < valid_to)
+);
+INSERT INTO core.product_category_version
+    (product_id, category_id, valid_from, valid_to)
+SELECT product_id, category_id, '-infinity', 'infinity'
+FROM core.product;
+
 CREATE TABLE core.orders (
     order_id text PRIMARY KEY,
     customer_id text NOT NULL REFERENCES core.customer_record(customer_id),
+    address_version_id bigint NOT NULL REFERENCES core.customer_address_version(address_version_id),
     order_status text NOT NULL,
     purchased_at timestamp,
     approved_at timestamp,
@@ -101,13 +137,18 @@ CREATE TABLE core.orders (
     estimated_delivery_at timestamp
 );
 INSERT INTO core.orders
-SELECT order_id, customer_id, order_status,
-       NULLIF(order_purchase_timestamp, '')::timestamp,
-       NULLIF(order_approved_at, '')::timestamp,
-       NULLIF(order_delivered_carrier_date, '')::timestamp,
-       NULLIF(order_delivered_customer_date, '')::timestamp,
-       NULLIF(order_estimated_delivery_date, '')::timestamp
-FROM raw.orders;
+SELECT r.order_id, r.customer_id, av.address_version_id, r.order_status,
+       NULLIF(r.order_purchase_timestamp, '')::timestamp,
+       NULLIF(r.order_approved_at, '')::timestamp,
+       NULLIF(r.order_delivered_carrier_date, '')::timestamp,
+       NULLIF(r.order_delivered_customer_date, '')::timestamp,
+       NULLIF(r.order_estimated_delivery_date, '')::timestamp
+FROM raw.orders r
+JOIN core.customer_address_version av
+  ON av.customer_id = r.customer_id
+ AND ((NULLIF(r.order_purchase_timestamp, '')::timestamp >= av.valid_from
+       AND NULLIF(r.order_purchase_timestamp, '')::timestamp < av.valid_to)
+      OR (NULLIF(r.order_purchase_timestamp, '') IS NULL AND av.valid_from = '-infinity'));
 
 -- Grain: one product/seller position within an order. order_item_id is a
 -- position number, not a globally unique item ID.
@@ -115,6 +156,7 @@ CREATE TABLE core.order_item (
     order_id text NOT NULL REFERENCES core.orders(order_id),
     order_item_id integer NOT NULL,
     product_id text NOT NULL REFERENCES core.product(product_id),
+    category_id text NOT NULL REFERENCES core.product_category(category_id),
     seller_id text NOT NULL REFERENCES core.seller(seller_id),
     shipping_limit_at timestamp,
     item_price numeric(12,2) NOT NULL,
@@ -122,10 +164,15 @@ CREATE TABLE core.order_item (
     PRIMARY KEY (order_id, order_item_id)
 );
 INSERT INTO core.order_item
-SELECT order_id, order_item_id::integer, product_id, seller_id,
-       NULLIF(shipping_limit_date, '')::timestamp,
-       price::numeric(12,2), freight_value::numeric(12,2)
-FROM raw.order_items;
+SELECT ri.order_id, ri.order_item_id::integer, ri.product_id, pcv.category_id, ri.seller_id,
+       NULLIF(ri.shipping_limit_date, '')::timestamp,
+       ri.price::numeric(12,2), ri.freight_value::numeric(12,2)
+FROM raw.order_items ri
+JOIN core.orders o USING (order_id)
+JOIN core.product_category_version pcv
+  ON pcv.product_id = ri.product_id
+ AND ((o.purchased_at >= pcv.valid_from AND o.purchased_at < pcv.valid_to)
+      OR (o.purchased_at IS NULL AND pcv.valid_from = '-infinity'));
 
 -- A single order can have several payment rows.
 CREATE TABLE core.order_payment (
