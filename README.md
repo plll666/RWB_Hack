@@ -23,14 +23,29 @@ bash scripts/setup.sh
 
 ## Сборка модели
 
-После загрузки `raw` постройте модель и выполните запросы из кейса:
+Контракт расчёта метрик — в [docs/metric_definitions.md](docs/metric_definitions.md). После загрузки `raw` выполните сборку, проверки и запросы ответов из кейса:
 
 ```bash
 docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/build.sql
+docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/checks.sql
 docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/answers.sql
 ```
 
-Скрипт модели можно запускать повторно: он пересоздаёт только таблицы в `core`, не меняя `raw`. Анализ исходных данных и контрольные результаты собраны в [docs/analysis.md](docs/analysis.md).
+Скрипт модели можно запускать повторно: он пересоздаёт только таблицы в `core`, не меняя `raw`. `checks.sql` завершится ошибкой при нарушении блокирующей проверки (`FAIL`, при `ON_ERROR_STOP=1`) и выведет отдельные предупреждения качества (`WARN`). Анализ исходных данных и контрольные результаты собраны в [docs/analysis.md](docs/analysis.md).
+
+### Полный цикл на чистой базе и повторная сборка
+
+```bash
+bash scripts/setup.sh --reset
+docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/build.sql
+docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/checks.sql
+docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/answers.sql
+
+docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/build.sql
+docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/checks.sql
+```
+
+**Важно:** `--reset` удаляет Docker volume `pgdata` вместе с базой. Перед запуском убедитесь, что там нет данных, которые нужно сохранить.
 
 ## С чего начать
 
@@ -50,7 +65,15 @@ docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f -
 │
 ├── docs/
 │   ├── handout.md                задание и описание данных
-│   └── tasks.md                  вопросы к модели
+│   ├── tasks.md                  вопросы к модели
+│   ├── metric_definitions.md     контракт метрик
+│   ├── analysis.md               исследование данных и контрольные числа
+│   └── answers.md                интерпретация результатов
+│
+├── model/
+│   ├── build.sql                 сборка core из raw
+│   ├── checks.sql                блокирующие проверки и WARN-диагностика
+│   └── answers.sql               ответы на вопросы кейса
 │
 ├── scripts/
 │   ├── setup.sh                  установка окружения целиком
