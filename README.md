@@ -21,6 +21,17 @@ bash scripts/setup.sh
 
 Подключение: `postgresql://hack:hack@localhost:5432/marketplace`
 
+## Сборка модели
+
+После загрузки `raw` постройте модель и выполните запросы из кейса:
+
+```bash
+docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/build.sql
+docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/answers.sql
+```
+
+Скрипт модели можно запускать повторно: он пересоздаёт только таблицы в `core`, не меняя `raw`. Анализ исходных данных и контрольные результаты собраны в [docs/analysis.md](docs/analysis.md).
+
 ## С чего начать
 
 1. [docs/handout.md](docs/handout.md) — задание, описание данных и что сдавать.
