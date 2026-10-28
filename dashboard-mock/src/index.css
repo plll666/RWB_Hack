@@ -1,0 +1,505 @@
+﻿:root {
+  --bg: #0f1216;
+  --panel: #141920;
+  --panel-2: #181f27;
+  --border: #232b34;
+  --border-strong: #3a4551;
+  --text: #e9edf1;
+  --muted: #9aa4af;
+  --faint: #6b7581;
+  --accent: #e2b65c;
+  --accent-dim: rgba(226, 182, 92, 0.12);
+  --series-2: #7da7e0;
+  --bar-mid: #3f4a56;
+  --bar-faint: #283039;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --font-ui: "IBM Plex Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-num: "IBM Plex Mono", "SF Mono", Consolas, monospace;
+  color-scheme: dark;
+}
+
+/* Светлая тема — те же токены, другой набор значений */
+:root[data-theme='light'] {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --panel-2: #f4f5f7;
+  --border: #e3e6ea;
+  --border-strong: #c3c9d0;
+  --text: #191d21;
+  --muted: #5b636b;
+  --faint: #878f98;
+  --accent: #a4771b;
+  --accent-dim: rgba(164, 119, 27, 0.09);
+  --series-2: #3d67a0;
+  --bar-mid: #b8bfc7;
+  --bar-faint: #e6e9ec;
+  color-scheme: light;
+}
+
+:root {
+  line-height: 1.5;
+  font-weight: 400;
+  font-size: 13px;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+/* ── Каркас ─────────────────────────────────────────── */
+
+.dash {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px 36px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Шапка ─────────────────────────────────────────── */
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar-title {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.topbar-sub {
+  color: var(--muted);
+  margin: 4px 0 0;
+  font-size: 12.5px;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.topbar-tag {
+  font-family: var(--font-num);
+  font-size: 10.5px;
+  color: var(--faint);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.topbar-tag::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--accent);
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+
+/* ── Кнопки и селекты ──────────────────────────────── */
+
+.chip {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: color 0.15s var(--ease-out), border-color 0.15s var(--ease-out),
+    background-color 0.15s var(--ease-out);
+}
+
+.chip:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.chip.is-active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.filterbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filterbar-selects {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.select {
+  appearance: none;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 26px 6px 11px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%239aa4af'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: color 0.15s var(--ease-out), border-color 0.15s var(--ease-out);
+}
+
+.select:hover { color: var(--text); border-color: var(--border-strong); }
+
+:root[data-theme='light'] .select {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%235b636b'/%3E%3C/svg%3E");
+}
+
+/* ── Полоса метрик (KPI и доставка) ────────────────── */
+
+/* Клетки на волосяных разделителях: контейнер красит щели */
+.strip {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.strip.is-5 { grid-template-columns: repeat(5, 1fr); }
+
+.strip-cell {
+  background: var(--panel);
+  padding: 16px 18px 14px;
+  min-width: 0;
+}
+
+.metric-label {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metric-value {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.metric-suffix {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 4px;
+}
+
+.metric-sub {
+  font-size: 11.5px;
+  color: var(--faint);
+  margin: 8px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Панели ─────────────────────────────────────────── */
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px 20px 16px;
+  min-width: 0;
+}
+
+.panel-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+
+.panel-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+.panel-note {
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.section-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 6px 0 10px;
+}
+
+.section-h h3 {
+  font-size: 13.5px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.grid-main {
+  display: grid;
+  grid-template-columns: 1.85fr 1fr;
+  gap: 16px;
+  align-items: stretch;
+}
+
+/* ── График ─────────────────────────────────────────── */
+
+.chart-svg { display: block; width: 100%; height: auto; }
+
+.chart-grid { stroke: var(--border); stroke-width: 1; }
+
+.chart-axis {
+  fill: var(--faint);
+  font-size: 10.5px;
+  font-family: var(--font-num);
+}
+
+.chart-path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.25;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  /* pathLength=1 в разметке: нормированная отрисовка через dashoffset */
+  stroke-dasharray: 1;
+}
+
+.chart-area { fill: var(--accent-dim); }
+
+.chart-path-dashed {
+  fill: none;
+  stroke: var(--series-2);
+  stroke-width: 2;
+  stroke-dasharray: 4 5;
+  stroke-linejoin: round;
+}
+
+.chart-end-dot { fill: var(--accent); }
+.chart-end-halo { fill: var(--accent-dim); }
+
+.chart-end-label {
+  fill: var(--text);
+  font-size: 11px;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+.legend {
+  display: flex;
+  gap: 18px;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 12px 0 0;
+}
+
+.legend-key {
+  display: inline-block;
+  width: 16px;
+  height: 0;
+  border-top: 2.5px solid var(--accent);
+  border-radius: 2px;
+  margin-right: 7px;
+  vertical-align: middle;
+}
+
+.legend-key.is-dashed {
+  border-top: 2.5px dashed var(--series-2);
+  border-radius: 0;
+}
+
+/* Кроссхейр */
+.chart-hover-line { stroke: var(--border-strong); stroke-dasharray: none; }
+.chart-hover-dot { fill: var(--bg); stroke: var(--accent); stroke-width: 2; }
+.chart-hover-dot-2 { fill: var(--bg); stroke: var(--series-2); stroke-width: 2; }
+.chart-hover-bg { fill: var(--accent-dim); }
+
+/* Тултип */
+.chart-tip-bg { fill: var(--panel); stroke: var(--border-strong); }
+.chart-tip-month {
+  fill: var(--muted);
+  font-size: 10.5px;
+  font-family: var(--font-num);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.chart-tip-name { fill: var(--muted); font-size: 11px; }
+.chart-tip-val {
+  fill: var(--text);
+  font-size: 11px;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Статусы ─────────────────────────────────────────── */
+
+/* Панель статусов: список растягивается на всю высоту,
+   чтобы блок визуально уравновешивал график справа/слева */
+.status-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.status-panel .panel-h { flex-shrink: 0; }
+
+.status-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  margin: 0;
+}
+
+.status-panel .panel-title { font-size: 15.5px; }
+
+.status-row {
+  display: grid;
+  grid-template-columns: 122px 1fr 56px;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 0;
+}
+
+.status-row + .status-row { border-top: 1px solid var(--panel-2); }
+
+.status-label { color: var(--text); font-size: 15px; white-space: nowrap; }
+
+.status-track { height: 8px; background: var(--bar-faint); border-radius: 2px; overflow: hidden; }
+
+.status-fill {
+  height: 100%;
+  width: var(--w);
+  border-radius: 2px;
+  transform-origin: 0 50%;
+}
+
+.status-fill.is-accent { background: var(--accent); }
+.status-fill.is-mid { background: var(--bar-mid); }
+.status-fill.is-faint { background: var(--bar-faint); }
+
+.status-value {
+  text-align: right;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+/* ── Таблица ─────────────────────────────────────────── */
+
+.cat-table { width: 100%; border-collapse: collapse; }
+
+.cat-table th {
+  text-align: left;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 12px 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.cat-table th.is-num, .cat-table td.is-num {
+  text-align: right;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+.cat-table td {
+  padding: 13px 12px 13px 0;
+  border-bottom: 1px solid var(--panel-2);
+  font-size: 15px;
+  transition: background-color 0.15s var(--ease-out);
+}
+
+.cat-table tbody tr:hover td { background: var(--panel-2); }
+
+.cat-table .is-muted { color: var(--muted); }
+.cat-table .is-accent-text { color: var(--accent); }
+
+/* ── Переключение темы ─────────────────────────────── */
+
+/* Смена темы: короткое затухание цветов, без движения */
+body,
+.panel,
+.strip,
+.strip-cell,
+.chip,
+.select,
+.status-track,
+.status-fill {
+  transition: background-color 0.2s var(--ease-out), border-color 0.2s var(--ease-out),
+    color 0.2s var(--ease-out);
+}
+
+/* ── Адаптив ─────────────────────────────────────────── */
+
+@media (max-width: 1080px) {
+  .strip { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 860px) {
+  .grid-main { grid-template-columns: 1fr; }
+  .strip { grid-template-columns: repeat(2, 1fr); }
+  .strip.is-5 { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 560px) {
+  .dash { padding: 20px 16px 32px; }
+  .strip { grid-template-columns: 1fr; }
+  .strip.is-5 { grid-template-columns: 1fr; }
+}
+
+/* ── Reduced motion: анимации отключены в JS (gsap.matchMedia) ── */
