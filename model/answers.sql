@@ -1,4 +1,4 @@
--- Answers to docs/tasks.md. Revenue means merchandise value (item_price),
+-- Answers to the case questions. Revenue means merchandise value (item_price),
 -- excludes freight, and includes delivered orders only. The analysis window
 -- is [2016-09-01, 2018-09-01), matching the first five questions.
 
