@@ -23,7 +23,7 @@ bash scripts/setup.sh
 
 ## Сборка модели
 
-Контракт расчёта метрик — в [docs/metric_definitions.md](docs/metric_definitions.md). После загрузки `raw` выполните сборку, проверки и запросы ответов из кейса:
+Формулы и правила расчётов собраны в [описании модели](docs/model.md). После загрузки `raw` выполните сборку, проверки и запросы ответов из кейса:
 
 ```bash
 docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/build.sql
@@ -31,7 +31,7 @@ docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f -
 docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/answers.sql
 ```
 
-Скрипт модели можно запускать повторно: он пересоздаёт только таблицы в `core`, не меняя `raw`. `checks.sql` завершится ошибкой при нарушении блокирующей проверки (`FAIL`, при `ON_ERROR_STOP=1`) и выведет отдельные предупреждения качества (`WARN`). Анализ исходных данных и контрольные результаты собраны в [docs/analysis.md](docs/analysis.md).
+Скрипт модели можно запускать повторно: он пересоздаёт только таблицы в `core`, не меняя `raw`. `checks.sql` завершится ошибкой при нарушении блокирующей проверки (`FAIL`, при `ON_ERROR_STOP=1`) и выведет отдельные предупреждения качества (`WARN`). Запросы и контрольные результаты приведены в [ответах на вопросы](docs/answers.md).
 
 ### Полный цикл на чистой базе и повторная сборка
 
@@ -66,9 +66,12 @@ docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f -
 ├── docs/
 │   ├── handout.md                задание и описание данных
 │   ├── tasks.md                  вопросы к модели
-│   ├── metric_definitions.md     контракт метрик
-│   ├── analysis.md               исследование данных и контрольные числа
-│   └── answers.md                интерпретация результатов
+│   ├── model.md                  схема, гранулярность и контракт метрик
+│   ├── answers.md                запросы и контрольные результаты
+│   ├── solution_notes.md         краткая записка о решениях
+│   ├── dashboard_concept.md      концепция дашборда
+│   ├── development_strategy.md   стратегия развития
+│   └── defense_guide.md          сценарий защиты
 │
 ├── model/
 │   ├── build.sql                 сборка core из raw
