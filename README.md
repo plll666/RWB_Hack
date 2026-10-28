@@ -17,7 +17,7 @@ docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f -
 После проверок и ответов можно отдельно показать историчность модели:
 
 ```bash
-docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/history_demo.sql
+docker exec -i hack_postgres psql -x -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/history_demo.sql
 ```
 
 Скрипт выбирает одну позицию и заказ, временно меняет текущую версию категории и адреса, показывает сохранённые исторические ссылки и завершает транзакцию через `ROLLBACK`. Он не оставляет изменений в базе.
