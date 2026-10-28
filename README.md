@@ -1,20 +1,29 @@
-# Модель маркетплейса Capibara
+# Capibara: аналитика маркетплейса
 
-SQL-модель PostgreSQL для анализа заказов, товаров, продавцов, оплат и покупателей на данных Olist.
+Модель PostgreSQL для кейса Olist: неизменяемые `raw`, аналитический слой `core` и представления `mart`.
 
-## Быстрый запуск
+## Запуск
 
-Требуются Docker и Bash (Git Bash или WSL). Из корня репозитория:
+Нужны Docker Desktop и Bash (Git Bash или WSL). Из корня репозитория:
 
 ```bash
 bash scripts/setup.sh
 docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/build.sql
+docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/mart.sql
 docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/checks.sql
 docker exec -i hack_postgres psql -U hack -d marketplace -v ON_ERROR_STOP=1 -f - < model/answers.sql
 ```
 
-`build.sql` собирает схему `core` из исходной `raw`; `checks.sql` проверяет контрольные значения и показывает предупреждения о качестве данных; `answers.sql` выводит ответы на вопросы кейса.
+Для повторной сборки без сброса БД повторите `build.sql`, затем `mart.sql`, `checks.sql` и `answers.sql` в том же порядке. `checks.sql` останавливается на нарушении инвариантов и отдельно выводит предупреждения о качестве данных.
 
-Для пересоздания базы используйте `bash scripts/setup.sh --reset`. **Команда удаляет Docker volume с базой.**
+Полный сброс выполняется командой `bash scripts/setup.sh --reset`; она удаляет Docker volume с базой.
 
-Описание задания — [`docs/handout.md`](docs/handout.md), ответы и результаты — [`docs/answers.md`](docs/answers.md).
+## Дашборд
+
+`dashboard-mock/` — статический прототип. Живой Streamlit-дашборд подключается к PostgreSQL через локальный `DATABASE_URL`; секреты нельзя коммитить. После добавления приложения запуск: `streamlit run dashboard/app.py`.
+
+## Материалы
+
+- [Раздаточный материал](docs/handout.md), [требования блока Б](docs/tasks.md)
+- [Определения метрик](docs/metric_definitions.md), [ответы](docs/answers.md)
+- `model/build.sql`, `model/mart.sql`, `model/checks.sql`, `model/answers.sql`

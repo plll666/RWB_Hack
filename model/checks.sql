@@ -116,8 +116,7 @@ BEGIN
                sum(i.item_price) AS revenue
         FROM core.orders o
         JOIN core.order_item i USING (order_id)
-        JOIN core.product p USING (product_id)
-        JOIN core.product_category c USING (category_id)
+        JOIN core.product_category c ON c.category_id = i.category_id
         WHERE o.order_status = 'delivered'
           AND o.purchased_at >= timestamp '2016-09-01'
           AND o.purchased_at < timestamp '2018-09-01'
@@ -211,6 +210,112 @@ BEGIN
     RAISE NOTICE 'PASS: core relations required by model/answers.sql exist';
 END $$;
 
+-- Block B contract checks. Requires mart.sql to have run after build.sql.
+DO $$
+DECLARE
+    v_orders bigint;
+    v_status_orders bigint;
+    v_payments bigint;
+    v_payment_facts bigint;
+    v_items bigint;
+    v_sales_items bigint;
+    v_delivery_rows bigint;
+    v_sales_orders bigint;
+    v_review_pairs bigint;
+    v_review_facts bigint;
+BEGIN
+    IF to_regclass('mart.order_sales') IS NULL
+       OR to_regclass('mart.order_delivery') IS NULL
+       OR to_regclass('mart.sales_item') IS NULL
+       OR to_regclass('mart.payment_fact') IS NULL
+       OR to_regclass('mart.review_order') IS NULL THEN
+        RAISE EXCEPTION 'FAIL: run model/mart.sql before model/checks.sql';
+    END IF;
+
+    SELECT count(*) INTO v_orders FROM core.orders;
+    SELECT coalesce(sum(n), 0) INTO v_status_orders
+    FROM (SELECT count(*) AS n FROM core.orders GROUP BY order_status) s;
+    IF v_status_orders <> v_orders THEN
+        RAISE EXCEPTION 'FAIL: status groups contain % orders, expected %', v_status_orders, v_orders;
+    END IF;
+    RAISE NOTICE 'PASS: status counts cover all % orders', v_orders;
+
+    SELECT count(*) INTO v_payments FROM core.order_payment;
+    SELECT count(*) INTO v_payment_facts FROM mart.payment_fact;
+    IF v_payment_facts <> v_payments THEN
+        RAISE EXCEPTION 'FAIL: payment_fact has % rows, expected %', v_payment_facts, v_payments;
+    END IF;
+    RAISE NOTICE 'PASS: payment_fact preserves payment grain (% rows)', v_payments;
+
+    SELECT count(*) INTO v_sales_orders FROM mart.order_sales;
+    IF v_sales_orders <> v_orders
+       OR EXISTS (SELECT order_id FROM mart.order_sales GROUP BY order_id HAVING count(*) <> 1) THEN
+        RAISE EXCEPTION 'FAIL: order_sales is not one row per order';
+    END IF;
+    RAISE NOTICE 'PASS: order_sales has one row per order';
+
+    SELECT count(*) INTO v_items FROM core.order_item;
+    SELECT count(*) INTO v_sales_items FROM mart.sales_item;
+    IF v_sales_items <> v_items THEN
+        RAISE EXCEPTION 'FAIL: sales_item has % rows, expected %', v_sales_items, v_items;
+    END IF;
+    RAISE NOTICE 'PASS: sales_item preserves item grain (% rows)', v_items;
+
+    SELECT count(*) INTO v_delivery_rows FROM mart.order_delivery;
+    IF v_delivery_rows <> v_orders
+       OR EXISTS (SELECT order_id FROM mart.order_delivery GROUP BY order_id HAVING count(*) <> 1) THEN
+        RAISE EXCEPTION 'FAIL: order_delivery is not one row per order';
+    END IF;
+    RAISE NOTICE 'PASS: order_delivery has one row per order';
+
+    SELECT count(*) INTO v_review_pairs
+    FROM (SELECT DISTINCT order_id, review_score FROM core.order_review WHERE review_score BETWEEN 1 AND 5) r;
+    SELECT count(*) INTO v_review_facts FROM mart.review_order;
+    IF v_review_facts <> v_review_pairs
+       OR EXISTS (SELECT order_id, review_score FROM mart.review_order
+                  GROUP BY order_id, review_score HAVING count(*) <> 1) THEN
+        RAISE EXCEPTION 'FAIL: review_order does not preserve unique order/score pairs';
+    END IF;
+    RAISE NOTICE 'PASS: review_order preserves unique order/score pairs';
+
+    IF EXISTS (
+        SELECT 1 FROM mart.order_delivery
+        WHERE is_late IS DISTINCT FROM (delivered_at::date > estimated_delivery_at::date)
+          AND delivered_at IS NOT NULL AND estimated_delivery_at IS NOT NULL
+    ) OR EXISTS (
+        SELECT 1 FROM mart.order_delivery
+        WHERE delivery_days IS DISTINCT FROM extract(epoch FROM (delivered_at - purchased_at)) / 86400.0
+          AND delivered_at IS NOT NULL AND purchased_at IS NOT NULL
+    ) THEN
+        RAISE EXCEPTION 'FAIL: mart delivery formulas are inconsistent';
+    END IF;
+    RAISE NOTICE 'PASS: delivery duration and lateness formulas are consistent';
+
+    IF abs((SELECT sum(100.0 * n / v_orders)
+            FROM (SELECT count(*) AS n FROM core.orders GROUP BY order_status) x) - 100.0) > 0.000001 THEN
+        RAISE EXCEPTION 'FAIL: status shares do not sum to 100 percent';
+    END IF;
+    RAISE NOTICE 'PASS: status shares sum to 100 percent';
+
+    IF EXISTS (
+        WITH price_counts AS (
+            SELECT product_id, count(DISTINCT item_price) AS distinct_prices
+            FROM mart.sales_item
+            WHERE order_status = 'delivered'
+            GROUP BY product_id
+        ), chosen AS (
+            SELECT product_id, distinct_prices FROM price_counts
+            ORDER BY distinct_prices DESC, product_id LIMIT 1
+        )
+        SELECT 1 FROM price_counts pc CROSS JOIN chosen c
+        WHERE pc.distinct_prices > c.distinct_prices
+           OR (pc.distinct_prices = c.distinct_prices AND pc.product_id < c.product_id)
+    ) THEN
+        RAISE EXCEPTION 'FAIL: question 6 product is not the maximum-price-count product with deterministic tie-break';
+    END IF;
+    RAISE NOTICE 'PASS: question 6 uses deterministic distinct-price ranking';
+END $$;
+
 -- Non-blocking diagnostics: retain and report source anomalies instead of
 -- filtering them away or altering source values.
 SELECT 'WARN' AS level, 'orders_without_items' AS check_name, count(*) AS affected_rows
@@ -230,6 +335,12 @@ FROM core.orders
 WHERE (approved_at IS NOT NULL AND purchased_at IS NOT NULL AND approved_at < purchased_at)
    OR (handed_to_carrier_at IS NOT NULL AND purchased_at IS NOT NULL AND handed_to_carrier_at < purchased_at)
    OR (delivered_at IS NOT NULL AND handed_to_carrier_at IS NOT NULL AND delivered_at < handed_to_carrier_at)
+UNION ALL
+SELECT 'WARN', 'negative_delivery_duration_in_q7_q10', count(*)
+FROM core.orders
+WHERE order_status = 'delivered'
+  AND purchased_at IS NOT NULL AND delivered_at IS NOT NULL AND estimated_delivery_at IS NOT NULL
+  AND delivered_at < purchased_at
 UNION ALL
 SELECT 'WARN', 'payment_vs_basket_difference_over_0_01', count(*)
 FROM (

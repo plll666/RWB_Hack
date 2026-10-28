@@ -79,16 +79,15 @@ SELECT count(*) AS buyers,
            AS repeat_buyer_pct
 FROM buyer_orders;
 
--- 5. Category revenue, including the explicit unclassified bucket and the
--- untranslated source category names. Revenue excludes freight.
+-- 5. Category revenue uses the category captured on the order item so later
+-- product recategorization does not rewrite historical sales. Revenue excludes freight.
 WITH category_revenue AS (
     SELECT c.category_id,
            c.category_label_english AS category,
            sum(i.item_price) AS revenue
     FROM core.order_item i
     JOIN core.orders o USING (order_id)
-    JOIN core.product p USING (product_id)
-    JOIN core.product_category c USING (category_id)
+    JOIN core.product_category c ON c.category_id = i.category_id
     WHERE o.order_status = 'delivered'
       AND o.purchased_at >= timestamp '2016-09-01'
       AND o.purchased_at <  timestamp '2018-09-01'
@@ -100,3 +99,86 @@ SELECT category_id,
        round(100.0 * revenue / sum(revenue) OVER (), 2) AS share_pct
 FROM category_revenue
 ORDER BY revenue DESC;
+
+-- 6. Price history for the product with the most distinct delivered prices.
+-- Ties are resolved by the lexicographically smallest product_id.
+WITH candidate AS (
+    SELECT product_id
+    FROM mart.sales_item
+    WHERE order_status = 'delivered'
+    GROUP BY product_id
+    ORDER BY count(DISTINCT item_price) DESC, product_id
+    LIMIT 1
+)
+SELECT c.product_id,
+       si.order_date AS date,
+       si.item_price AS price,
+       count(*) AS units_sold
+FROM mart.sales_item si
+JOIN candidate c USING (product_id)
+WHERE si.order_status = 'delivered'
+GROUP BY c.product_id, si.order_date, si.item_price
+ORDER BY si.order_date, si.item_price;
+
+-- 7. Delivery by historical buyer state. The denominator is shown explicitly.
+SELECT buyer_state AS state,
+       count(*) AS delivered_orders,
+       round(avg(delivery_days)::numeric, 2) AS average_delivery_days,
+       round(100.0 * count(*) FILTER (WHERE is_late) / count(*), 2) AS late_pct
+FROM mart.order_delivery
+WHERE order_status = 'delivered'
+  AND has_complete_dates
+GROUP BY buyer_state
+HAVING count(*) >= 500
+ORDER BY buyer_state;
+
+-- 8. Order status funnel. Item counts are pre-aggregated to avoid multiplying orders.
+WITH item_counts AS (
+    SELECT order_id, count(*) AS item_count
+    FROM core.order_item
+    GROUP BY order_id
+), status_counts AS (
+    SELECT o.order_status,
+           count(*) AS order_count,
+           count(*) FILTER (WHERE coalesce(i.item_count, 0) = 0) AS orders_without_items
+    FROM core.orders o
+    LEFT JOIN item_counts i USING (order_id)
+    GROUP BY o.order_status
+)
+SELECT order_status AS status,
+       order_count,
+       round(100.0 * order_count / sum(order_count) OVER (), 2) AS share_pct,
+       orders_without_items
+FROM status_counts
+ORDER BY order_count DESC, order_status;
+
+-- 9. Payments by historical buyer state for orders placed in calendar 2018.
+SELECT buyer_state AS state,
+       count(*) AS payment_count,
+       sum(payment_value)::numeric(14,2) AS payment_value,
+       round(avg(installments)::numeric, 2) AS average_installments
+FROM mart.payment_fact
+WHERE order_date >= date '2018-01-01'
+  AND order_date <  date '2019-01-01'
+GROUP BY buyer_state
+ORDER BY buyer_state;
+
+-- 9b. Payment method summary for the full extract, reported separately.
+SELECT payment_type,
+       count(*) AS payment_count,
+       round(avg(installments)::numeric, 2) AS average_installments
+FROM mart.payment_fact
+GROUP BY payment_type
+ORDER BY payment_count DESC, payment_type;
+
+-- 10. Delivery metrics by distinct order/review-score pair. Same delivery
+-- window and late definition as question 7; association is not causation.
+SELECT review_score,
+       count(*) AS reviewed_orders,
+       round(avg(delivery_days)::numeric, 2) AS average_delivery_days,
+       round(100.0 * count(*) FILTER (WHERE is_late) / count(*), 2) AS late_pct
+FROM mart.review_order
+WHERE order_status = 'delivered'
+  AND has_complete_dates
+GROUP BY review_score
+ORDER BY review_score;
