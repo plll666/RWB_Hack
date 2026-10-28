@@ -9,7 +9,9 @@ DECLARE
     v_category_count integer;
     v_category_revenue numeric;
     v_health_beauty numeric;
+    v_category_leader text;
     v_average_ticket numeric;
+    v_average_lines numeric;
     v_top_seller numeric;
     v_buyers bigint;
     v_repeat_buyers bigint;
@@ -104,7 +106,7 @@ BEGIN
         RAISE EXCEPTION 'FAIL: expected 24 months including a zero-order month; got % months, % zero-revenue months and % zero-order months', v_months, v_zero_months, v_zero_order_months;
     END IF;
     RAISE NOTICE 'PASS: 24-month window includes a zero month';
-    IF abs(v_revenue - 13221498.11) > 0.01 THEN
+    IF round(v_revenue, 2) IS DISTINCT FROM 13221498.11::numeric THEN
         RAISE EXCEPTION 'FAIL: monthly merchandise revenue is %, expected 13221498.11', v_revenue;
     END IF;
     RAISE NOTICE 'PASS: monthly merchandise revenue total %', v_revenue;
@@ -122,21 +124,26 @@ BEGIN
         GROUP BY c.category_id, c.category_label_english
     )
     SELECT count(*), sum(revenue),
-           sum(revenue) FILTER (WHERE category = 'health_beauty')
-      INTO v_category_count, v_category_revenue, v_health_beauty
+           sum(revenue) FILTER (WHERE category = 'health_beauty'),
+           (array_agg(category ORDER BY revenue DESC))[1]
+      INTO v_category_count, v_category_revenue, v_health_beauty, v_category_leader
     FROM category_totals;
     IF v_category_count <> 74 THEN
         RAISE EXCEPTION 'FAIL: expected 74 selling categories, got %', v_category_count;
     END IF;
     RAISE NOTICE 'PASS: 74 selling categories';
-    IF abs(v_category_revenue - v_revenue) > 0.01 THEN
+    IF round(v_category_revenue, 2) IS DISTINCT FROM round(v_revenue, 2) THEN
         RAISE EXCEPTION 'FAIL: category revenue % does not reconcile to total %', v_category_revenue, v_revenue;
     END IF;
     RAISE NOTICE 'PASS: category sum reconciles to total revenue';
-    IF abs(v_health_beauty - 1233131.72) > 0.01 THEN
+    IF round(v_health_beauty, 2) IS DISTINCT FROM 1233131.72::numeric THEN
         RAISE EXCEPTION 'FAIL: health_beauty revenue is %, expected 1233131.72', v_health_beauty;
     END IF;
     RAISE NOTICE 'PASS: health_beauty revenue %', v_health_beauty;
+    IF v_category_leader IS DISTINCT FROM 'health_beauty' THEN
+        RAISE EXCEPTION 'FAIL: leading category is %, expected health_beauty', v_category_leader;
+    END IF;
+    RAISE NOTICE 'PASS: health_beauty is the leading category';
 
     WITH order_totals AS (
         SELECT o.order_id, sum(i.item_price + i.freight_value) AS ticket
@@ -147,10 +154,23 @@ BEGIN
         GROUP BY o.order_id
     )
     SELECT avg(ticket) INTO v_average_ticket FROM order_totals;
-    IF round(v_average_ticket, 2) <> 159.88 THEN
+    IF round(v_average_ticket, 2) IS DISTINCT FROM 159.88::numeric THEN
         RAISE EXCEPTION 'FAIL: average ticket is %, expected 159.88', round(v_average_ticket, 2);
     END IF;
     RAISE NOTICE 'PASS: average ticket %', round(v_average_ticket, 2);
+    SELECT avg(item_lines) INTO v_average_lines
+    FROM (
+        SELECT o.order_id, count(*) AS item_lines
+        FROM core.orders o JOIN core.order_item i USING (order_id)
+        WHERE o.order_status = 'delivered'
+          AND o.purchased_at >= timestamp '2016-09-01'
+          AND o.purchased_at < timestamp '2018-09-01'
+        GROUP BY o.order_id
+    ) line_totals;
+    IF round(v_average_lines, 4) IS DISTINCT FROM 1.1422::numeric THEN
+        RAISE EXCEPTION 'FAIL: average order lines are %, expected 1.1422', round(v_average_lines, 4);
+    END IF;
+    RAISE NOTICE 'PASS: average order lines/units %', round(v_average_lines, 4);
 
     SELECT max(seller_revenue) INTO v_top_seller
     FROM (
@@ -161,7 +181,7 @@ BEGIN
           AND o.purchased_at < timestamp '2018-09-01'
         GROUP BY i.seller_id
     ) seller_totals;
-    IF abs(v_top_seller - 226987.93) > 0.01 THEN
+    IF round(v_top_seller, 2) IS DISTINCT FROM 226987.93::numeric THEN
         RAISE EXCEPTION 'FAIL: top seller revenue is %, expected 226987.93', v_top_seller;
     END IF;
     RAISE NOTICE 'PASS: top seller revenue %', v_top_seller;
@@ -232,4 +252,8 @@ FROM core.product p
 JOIN core.product_category c USING (category_id)
 WHERE c.category_label_english = c.category_id
   AND c.category_id <> '__UNCLASSIFIED__'
+  AND NOT EXISTS (
+      SELECT 1 FROM raw.product_category_translation t
+      WHERE t.product_category_name = c.category_id
+  )
 ORDER BY check_name;

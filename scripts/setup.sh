@@ -10,7 +10,7 @@
 #  объясняя, что делать.
 # =====================================================================
 
-set -uo pipefail
+set -euo pipefail
 
 # Скрипт лежит в scripts/, а работать надо из корня проекта.
 SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -75,7 +75,8 @@ ok "данные на месте: $CSV_COUNT файлов"
 # --- 3. Python ------------------------------------------------------
 step "Проверяю Python"
 
-if command -v python3 >/dev/null 2>&1; then PY=python3
+if [ -n "${PYTHON:-}" ]; then PY="$PYTHON"
+elif command -v python3 >/dev/null 2>&1; then PY=python3
 elif command -v python >/dev/null 2>&1; then PY=python
 else die "не найден python" "Установите Python 3.10 или новее."; fi
 
@@ -91,7 +92,7 @@ ok "python и psycopg2 готовы"
 # --- 4. Контейнер ---------------------------------------------------
 if [ "$RESET" = "1" ]; then
   step "Сношу старую базу (--reset)"
-  $DC --profile tools down -v --remove-orphans
+  $DC --profile tools down -v --remove-orphans || die "не удалось удалить старую базу" "Проверьте docker compose ps и повторите после устранения ошибки."
   ok "удалено"
 fi
 
